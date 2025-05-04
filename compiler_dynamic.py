@@ -61,6 +61,10 @@ class Callable:
     args: List[type]
     output_type: type
 
+@dataclass
+class Any:
+    pass
+
 def typecheck(program: Program) -> Program:
     """
     Typechecks the input program; throws an error if the program is not well-typed.
@@ -99,9 +103,23 @@ def typecheck(program: Program) -> Program:
             case Call(func, args):
                 arg_types = [tc_exp(a, env) for a in args]
                 match tc_exp(func, env):
+
+
                     case Callable(param_types, return_type):
-                        assert param_types == arg_types
-                        return return_type
+                        assert len(param_types) == len(arg_types)
+                        #we need the same number of parameters as arguements
+                        for p, a in zip(param_types, arg_types):
+                        #for every parameter and every argument in param_types and arg_types:
+                            assert p == a or p == Any or a == Any
+                            #assert parameter type is the same as arguemtn type or, 
+                            #parameter is an 'Any' or, 
+                            #arguement is an 'Any'  
+                        if Any not in arg_types:
+                            return return_type     
+                        else:
+                            return Any
+                    
+
                     case t:
                         raise Exception('expected function type, but got:', t)
 
@@ -114,9 +132,17 @@ def typecheck(program: Program) -> Program:
                     return int
                 else:
                     raise Exception('tc_exp', e)
+                
+
             case Prim('eq', [e1, e2]):
-                assert tc_exp(e1, env) == tc_exp(e2, env)
+                t1 = tc_exp(e1, env)
+                t2 = tc_exp(e2, env)
+                assert t1 == t2 or t1 == Any or t2 == Any
+                # basically here, if eq sees an "Any" type, we allow it but it will still return a bool 
                 return bool
+                #even if its dynaically typed, comparing two things should always yeild a boolean so we dont need to change this
+            
+
             case Begin(stmts, e1):
                 tc_stmts(stmts, env)
                 return tc_exp(e1, env)
@@ -128,12 +154,31 @@ def typecheck(program: Program) -> Program:
                 t = tc_exp(e1, env)
                 assert isinstance(t, tuple)
                 return t[i]
+            
+            #The lovely primitive operation case
             case Prim(op, args):
                 arg_types = [tc_exp(a, env) for a in args]
-                assert arg_types == prim_arg_types[op]
-                return prim_output_types[op]
+                expected_types = prim_arg_types[op]
+                #these are the expected types for whatever operation were doing ('add' would be [int, int])
+                for at, et in zip(arg_types, expected_types):
+                #for argument type and expected type in arg_types and expected_types,
+                    assert at == et or at == Any or et == Any
+                    #assert argument type is the same as expected type, or 
+                    #argument type is an "Any", or, 
+                    #expected type is an "Any"
+                out_type = prim_output_types[op]
+                #finds expected return type. ('add' would be 'int')
+
+                if Any in arg_types:
+                    return Any
+                    #if any of the inputs are an 'Any' type (dynamic)
+                    #the result will be an 'Any' type
+                else:
+                    return out_type
+                    #otherwise we maintain the static type (just like addign two 'int')
             case _:
                 raise Exception('tc_exp', e)
+            
 
     def tc_stmt(s: Stmt, env: TEnv):
         match s:
@@ -165,14 +210,19 @@ def typecheck(program: Program) -> Program:
                 tc_stmts(else_stmts, env)
             case Print(e):
                 tc_exp(e, env)
+                
+
+
             case Assign(x, e):
                 t_e = tc_exp(e, env)
                 if x in env:
-                    assert t_e == env[x]
+                    assert t_e == env[x] or t_e == Any or env[x] == Any
+                    #again were just changing this assert to allow for 'Any' types
                 else:
                     env[x] = t_e
             case _:
                 raise Exception('tc_stmt', s)
+            
 
     def tc_stmts(stmts: List[Stmt], env: TEnv):
         for s in stmts:
